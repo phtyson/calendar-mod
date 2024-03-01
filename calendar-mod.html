@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<!--
+Copyright 2024 Paul H. Tyson
+phtyson at sbcglobal dot net
+
+calendar-mod is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
+
+calendar-mod is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with calendar-mod. If not, see <https://www.gnu.org/licenses/>.
+-->
+<html lang="en">
+  <head>
+    <title>Calendar Mod</title>
+    <script src="lib/d3.v7.min.js"></script>
+    <script type="module">
+
+      /**
+       * https://github.com/Sarabveer/calendrica-js
+       * ported from https://www.cs.tau.ac.il/~nachum/calendar-book/index.shtml
+       * refactored into ES modules
+       */
+      import {fixedFromGregorian} from './lib/calendrica/gregorian.js';
+      import {solarLongitudeAfter,lunarPhaseAtOrBefore} from './lib/calendrica/astronomy.js';
+
+      /** locale, e.g. "en-US", "en" */
+      const userLocale =
+	    navigator.languages && navigator.languages.length
+	    ? navigator.languages[0]
+	    : navigator.language;
+      
+      /** URL query parameters */
+      const urlQueryParams = (new URL(document.URL)).searchParams;
+
+      /** The year to make calendar for. */
+      const y = parseInt(urlQueryParams.get("year")) || (new Date()).getUTCFullYear();
+
+      /** R.D. of solstices and equinoxes */
+       const equinox03 = Math.floor(solarLongitudeAfter(0,fixedFromGregorian(y,3,20)));
+       const solstice06 = Math.floor(solarLongitudeAfter(90,fixedFromGregorian(y,6,20)));
+       const equinox09 = Math.floor(solarLongitudeAfter(180,fixedFromGregorian(y,9,20)));
+       const solstice12 = Math.floor(solarLongitudeAfter(270,fixedFromGregorian(y,12,20)));
+
+      /**
+       * 8-element array of date arrays, one for each page.
+       * Each page has 2 arrays--one full month and one half.
+       */
+      const yearDays = [[d3.timeDays(new Date(y,0,1),new Date(y,1,1)),
+			 d3.timeDays(new Date(y,1,1),new Date(y,1,16))],
+			[d3.timeDays(new Date(y,1,16),new Date(y,2,1)),
+			 d3.timeDays(new Date(y,2,1),new Date(y,3,1))],
+			[d3.timeDays(new Date(y,3,1),new Date(y,4,1)),
+			 d3.timeDays(new Date(y,4,1),new Date(y,4,16))],
+			[d3.timeDays(new Date(y,4,16),new Date(y,5,1)),
+			 d3.timeDays(new Date(y,5,1),new Date(y,6,1))],
+			[d3.timeDays(new Date(y,6,1),new Date(y,7,1)),
+			 d3.timeDays(new Date(y,7,1),new Date(y,7,16))],
+			[d3.timeDays(new Date(y,7,16),new Date(y,8,1)),
+			 d3.timeDays(new Date(y,8,1),new Date(y,9,1))],
+			[d3.timeDays(new Date(y,9,1),new Date(y,10,1)),
+			 d3.timeDays(new Date(y,10,1),new Date(y,10,16))],
+			[d3.timeDays(new Date(y,10,16),new Date(y,11,1)),
+			 d3.timeDays(new Date(y,11,1),new Date(y+1,0,1))]];
+      
+      const weekDays = ["Su","M","Tu","W","Th","F","Sa"];
+
+      /**
+       * Return month name for date.
+       * @param d the Date
+       * @param sh boolean to make short name
+       */
+      const monthName = function(d,sh) {
+	  return d instanceof Date ?
+	      d.toLocaleDateString(userLocale,{month: sh?"short":"long"})
+	      : "";
+      }
+
+      /**
+       * Enrich list of dates with month/year header
+       * and blank at position 15 of full month.
+       */
+      const monthData = function(d,i,nl) {
+	  const col1 = i%2===0;
+	  const full = d.length>16;
+	  let mHdr = monthName(d[0],!full);
+	  if (full) {
+	      if (col1) {
+		  mHdr += `<span class="year">${y}</span>`;
+	      } else {
+		  mHdr = `<span class="year">${y}</span>${mHdr}`;
+	      }
+	  }
+	  let arr = [];
+	  if (full) {
+	      arr = [mHdr,...d.slice(0,15),"",...d.slice(15)];
+	  } else {
+	      arr = [mHdr,...d];
+	  }
+	  return arr;
+      }
+
+      /**
+       * Turn date into d Wd format plus lunar phase and season start,
+       * if applicable.
+       * Symbols from https://en.wikipedia.org/wiki/Astronomical_symbols
+       * (retrieved 2024-02-28).
+       */
+      const dayData = function(d,i,nl) {
+	  let str = "";
+	  if (d instanceof Date) {
+	      const gDate = [d.getUTCFullYear()
+			     ,d.getUTCMonth()+1
+			     ,d.getUTCDate()];
+	      const rd = fixedFromGregorian(...gDate);
+
+	      str = `${d.getDate()} ${weekDays[d.getDay()]}`;
+
+	      /** lunar phases
+	       * new: unicode &#x1f311; , astrosym.40.svg
+	       * 1st: unicode &#x1f313; , astrosym.45.svg
+	       * full: unicode &#x1f315; , astrosym.39.svg
+	       * last: unicode &#x1f317; , astrosym.44.svg
+	       */
+	      if (Math.floor(lunarPhaseAtOrBefore(0,rd+1)) === rd) {
+		  str += ` <span class="lunar-phase">&#x1f311;</span>`; 
+	      } else if (Math.floor(lunarPhaseAtOrBefore(90,rd+1)) === rd) {
+		  str += ` <span class="lunar-phase">&#x1f313;</span>`;
+	      } else if (Math.floor(lunarPhaseAtOrBefore(180,rd+1)) === rd) {
+		  str += ` <span class="lunar-phase">&#x1f315;</span>`;
+	      } else if (Math.floor(lunarPhaseAtOrBefore(270,rd+1)) === rd) {
+		  str += ` <span class="lunar-phase">&#x1f317;</span>`;
+	      }
+	      
+	      /** solstices and equinoxes
+	       * Aries March Equinox astrosym.11.svg, &#x2648;
+	       * Cancer June solstice astrosym.14.svg, &#x264b;
+	       * Libra September Equinox astrosym.17.svg, &#x264e;
+	       * Capricornus December solstice astrosysm.20.svg, &#x2651;
+	       */
+	      if (rd === equinox03) {
+		  str += ` <span class="equinox">&#x2648;</span>`;
+	      } else if (rd === solstice06) {
+		  str += ` <span class="solstice">&#x264b;</span>`;
+	      } else if (rd === equinox09) {
+		  str += ` <span class="equinox">&#x264e;</span>`;
+	      } else if (rd === solstice12) {
+		  str += ` <span class="solstice">&#x2651;</span>`	      }
+	  } else {
+	      str = d;
+	  }
+	  return str;
+      }
+      /**
+       * Generate html for grid layout on 8 pages.
+       */
+      const makeCalendar = function() {
+	  d3.select("#pocketmod")
+	      .selectAll("div")
+	      .data(yearDays)
+	      .join("div")
+	      .attr("class",(d,i)=>`page${i+1}`)
+	      .classed("odd-page",(d,i)=>i%2===0)
+	      .classed("even-page",(d,i)=>i%2===1)
+	      .selectAll("div")
+	      .data(d=>d)
+	      .join("div")
+	      .attr("class",d=>`month${d.length>16?2:1}`)
+	      .selectAll("div")
+	      .data(monthData)
+	      .join("div")
+	      .classed("month-header1",(d,i,nl)=>i===0 && nl.length<=16)
+	      .classed("month-header2",(d,i,nl)=>i===0 && nl.length>16)
+	      .classed("day",(d,i)=>i>0 && d)
+	      .classed("weekend",d => d instanceof Date && [0,6].indexOf(d.getUTCDay())>-1)
+	      .html(dayData);
+      }
+
+      document.addEventListener("load",makeCalendar());
+    </script>
+    <link rel="stylesheet" href="style/calendar-mod.css"/>
+    
+  </head>
+  <body>
+    <div id="pocketmod" class="pocketmod">
+    </div>
+  </body>
+</html>
